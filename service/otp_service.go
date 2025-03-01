@@ -2,27 +2,41 @@ package service
 
 import (
 	"context"
+	"crypto/rand"
 	"fmt"
-	"math/rand"
-	"time"
-
 	"github.com/go-redis/redis/v8"
+	"math/big"
+	"time"
 )
 
 type OTPService struct {
 	RedisClient *redis.Client
-	Ctx         context.Context
+	Context     context.Context
+	OTPTTL      time.Duration // Configurable TTL
 }
 
-func NewOTPService(redisClient *redis.Client, ctx context.Context) *OTPService {
-	return &OTPService{RedisClient: redisClient, Ctx: ctx}
+func NewOTPService(redisClient *redis.Client, ctx context.Context, ttl time.Duration) *OTPService {
+	return &OTPService{
+		RedisClient: redisClient,
+		Context:     ctx,
+		OTPTTL:      ttl,
+	}
 }
 
 func (s *OTPService) GenerateOTP(username string) (string, error) {
-	otp := fmt.Sprintf("%06d", rand.Intn(1000000))
-	redisKey := fmt.Sprintf("otp:%s", username)
+	// Set the maximum value for a 6-digit number (999999)
+	const max = 1000000
 
-	err := s.RedisClient.Set(s.Ctx, redisKey, otp, 10*time.Minute).Err()
+	// Generate a random number in the range [0, 999999]
+	n, err := rand.Int(rand.Reader, big.NewInt(max))
+	if err != nil {
+		return "", err
+	}
+
+	otp := fmt.Sprintf("%06d", n.Int64())
+	otpKey := fmt.Sprintf("otp:%s", username)
+
+	err = s.RedisClient.Set(s.Context, otpKey, otp, s.OTPTTL).Err()
 	if err != nil {
 		return "", err
 	}
@@ -31,19 +45,17 @@ func (s *OTPService) GenerateOTP(username string) (string, error) {
 }
 
 func (s *OTPService) ValidateOTP(username, otp string) (string, error) {
-	redisKey := fmt.Sprintf("otp:%s", username)
-	storedOTP, err := s.RedisClient.Get(s.Ctx, redisKey).Result()
-
+	otpKey := fmt.Sprintf("otp:%s", username)
+	storedOTP, err := s.RedisClient.Get(s.Context, otpKey).Result()
 	if err == redis.Nil {
-		return "", fmt.Errorf("OTP expired or not found")
+		return "invalid", fmt.Errorf("OTP has expired or does not exist")
 	} else if err != nil {
-		return "", fmt.Errorf("Internal server error")
+		return "invalid", fmt.Errorf("Server error: %v", err)
 	}
 
 	if storedOTP != otp {
-		return "", fmt.Errorf("Invalid OTP")
+		return "invalid", fmt.Errorf("Incorrect OTP entered")
 	}
 
-	s.RedisClient.Del(s.Ctx, redisKey)
-	return "success", nil
+	return "valid", nil
 }

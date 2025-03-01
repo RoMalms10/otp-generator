@@ -6,14 +6,16 @@ import (
 	"github.com/go-redis/redis/v8"
 	"github.com/gorilla/mux"
 	"golang.org/x/net/context"
+	"time"
 )
 
-func NewRouter(redisClient *redis.Client, ctx context.Context) *mux.Router {
-	r := mux.NewRouter()
-	otpService := service.NewOTPService(redisClient, ctx)
-	h := handler.NewHandler(otpService)
+func NewRouter(redisClient *redis.Client, ctx context.Context, otpTTL time.Duration) *mux.Router {
+	otpService := service.NewOTPService(redisClient, ctx, otpTTL)
+	otpHandler := handler.NewHandler(otpService)
 
-	r.HandleFunc("/otp/generate", h.GenerateOTPHandler).Methods("POST")
-	r.HandleFunc("/otp/validate", h.ValidateOTPHandler).Methods("POST")
+	r := mux.NewRouter()
+	r.HandleFunc("/otp/generate", otpHandler.GenerateOTPHandler).Methods("POST")
+	r.HandleFunc("/otp/validate", otpHandler.ValidateOTPHandler).Methods("POST")
+
 	return r
 }
