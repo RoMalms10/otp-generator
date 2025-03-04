@@ -9,3 +9,10 @@ type ValidationRequest struct {
 	Username string `json:"username"`
 	OTP      string `json:"otp"`
 }
+
+// Valid message types constant
+const (
+	MessageTypeEmail    = "email"
+	MessageTypeSMS      = "sms"
+	MessageTypeWhatsApp = "whatsapp"
+)
